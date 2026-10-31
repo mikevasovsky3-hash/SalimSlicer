@@ -960,7 +960,116 @@ inp.click();
         };
     }
 
+function _initSafeRangeSliders() {
+        const st = document.createElement('style');
+        st.textContent = `
+            input[type="range"] { touch-action: pan-y !important; }
+            input[type="range"]:disabled { opacity: 1 !important; }
+        `;
+        document.head.appendChild(st);
+
+        let activeSlider = null;
+
+        const getThumbX = (el) => {
+            const rect = el.getBoundingClientRect();
+            const min = el.min !== '' ? parseFloat(el.min) : 0;
+            const max = el.max !== '' ? parseFloat(el.max) : 100;
+            const val = el.value !== '' ? parseFloat(el.value) : min;
+            const ratio = Math.max(0, Math.min(1, (val - min) / ((max - min) || 1)));
+            const thumbRadius = 9;
+            return rect.left + thumbRadius + ratio * Math.max(0, rect.width - thumbRadius * 2);
+        };
+
+        const onDown = (e) => {
+            const el = e.target;
+            if (!el || el.tagName !== 'INPUT' || el.type !== 'range') return;
+            if (el._salimTouchActive || el._salimTrackBlocked) return;
+
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const distToThumb = Math.abs(clientX - getThumbX(el));
+
+            // Если палец попал мимо бегунка (по полосе) — блокируем прыжок ползунка и отдаём жест скроллу
+            if (distToThumb > 22) {
+                el._salimSavedValue = el.value;
+                el._salimTrackBlocked = true;
+                el.disabled = true;
+                activeSlider = el;
+                return;
+            }
+
+            // Палец на самом бегунке — ждём горизонтального перетаскивания
+            activeSlider = el;
+            el._salimSavedValue = el.value;
+            el._salimStartX = clientX;
+            el._salimStartY = clientY;
+            el._salimTouchActive = true;
+            el._salimThumbDragging = false;
+        };
+
+        const onMove = (e) => {
+            if (!activeSlider || !activeSlider._salimTouchActive) return;
+            const el = activeSlider;
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const dx = Math.abs(clientX - el._salimStartX);
+            const dy = Math.abs(clientY - el._salimStartY);
+
+            if (!el._salimThumbDragging) {
+                // Если палец пошёл вверх/вниз — это прокрутка страницы, отменяем захват бегунка
+                if (dy > 6 && dy > dx) {
+                    el.value = el._salimSavedValue;
+                    el._salimTouchActive = false;
+                    el._salimTrackBlocked = true;
+                    el.disabled = true;
+                    return;
+                }
+                // Палец пошёл влево/вправо — разрешаем перетаскивание бегунка
+                if (dx > 4 && dx >= dy) {
+                    el._salimThumbDragging = true;
+                }
+            } else if (e.cancelable && e.touches) {
+                e.preventDefault();
+            }
+        };
+
+        const onUp = () => {
+            if (!activeSlider) return;
+            const el = activeSlider;
+            if (el._salimTouchActive && !el._salimThumbDragging && el._salimSavedValue !== undefined) {
+                el.value = el._salimSavedValue;
+            }
+            el.disabled = false;
+            el._salimTrackBlocked = false;
+            el._salimTouchActive = false;
+            el._salimThumbDragging = false;
+            activeSlider = null;
+        };
+
+        const blockAccidentalInput = (e) => {
+            const el = e.target;
+            if (!el || el.tagName !== 'INPUT' || el.type !== 'range') return;
+            if (el._salimTrackBlocked || (el._salimTouchActive && !el._salimThumbDragging)) {
+                if (el._salimSavedValue !== undefined) el.value = el._salimSavedValue;
+                e.stopImmediatePropagation();
+                e.stopPropagation();
+            }
+        };
+
+        window.addEventListener('pointerdown', onDown, { capture: true, passive: true });
+        window.addEventListener('touchstart', onDown, { capture: true, passive: true });
+        window.addEventListener('pointermove', onMove, { capture: true, passive: true });
+        window.addEventListener('touchmove', onMove, { capture: true, passive: false });
+        window.addEventListener('pointerup', onUp, { capture: true, passive: true });
+        window.addEventListener('pointercancel', onUp, { capture: true, passive: true });
+        window.addEventListener('touchend', onUp, { capture: true, passive: true });
+        window.addEventListener('touchcancel', onUp, { capture: true, passive: true });
+        document.addEventListener('input', blockAccidentalInput, true);
+        document.addEventListener('change', blockAccidentalInput, true);
+    }
+
 window.addEventListener('DOMContentLoaded', () => {
+        _initSafeRangeSliders();
         initRotaryTempDials();
         initFileImportListeners();
         initThreeScene();
