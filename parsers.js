@@ -83,11 +83,13 @@ const SalimLoader = (function () {
     .sl-fill::after{content:"";position:absolute;top:0;bottom:0;width:60%;left:-60%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);will-change:transform;animation:slShine 1.4s ease-in-out infinite}
     @keyframes slShine{to{transform:translateX(280%)}}
     .sl-pct{color:#6ee7b7;font-size:11px;font-weight:800;margin-top:6px}
-    #salim-load-meter{position:absolute;right:8px;bottom:8px;z-index:15;width:156px;padding:6px 8px;border-radius:12px;background:rgba(2,6,23,.72);border:1px solid rgba(51,65,85,.9);font-family:monospace;font-size:9px;color:#cbd5e1;pointer-events:none;opacity:0;transition:opacity .3s}
-    #salim-load-meter.on{opacity:1}
-    #salim-load-meter .r{display:flex;justify-content:space-between;margin-top:3px}
-    #salim-load-meter .t{height:3px;margin-top:1px;border-radius:9px;background:rgba(51,65,85,.8);overflow:hidden}
-    #salim-load-meter .t i{display:block;height:100%;border-radius:9px;transition:width .5s}
+#salim-load-meter{display:none;width:176px;padding:7px 10px;border-radius:12px;background:rgba(15,23,42,.90);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(56,189,248,.22);box-shadow:0 10px 25px -5px rgba(0,0,0,.5);font-family:'JetBrains Mono',monospace;font-size:9px;color:#cbd5e1;pointer-events:none;opacity:0;transition:opacity .25s ease}
+    #salim-load-meter.on{display:block;opacity:1}
+    #salim-load-meter .hdr{display:flex;align-items:center;justify-content:space-between;padding-bottom:4px;margin-bottom:4px;border-bottom:1px solid rgba(51,65,85,.7);font-size:10px;font-weight:800;color:#f8fafc}
+    #salim-load-meter .r{display:flex;justify-content:space-between;margin-top:4px;color:#94a3b8}
+    #salim-load-meter .r b{color:#e2e8f0;font-weight:700}
+    #salim-load-meter .t{height:3.5px;margin-top:2px;border-radius:9px;background:rgba(2,6,23,.85);border:1px solid rgba(51,65,85,.5);overflow:hidden}
+    #salim-load-meter .t i{display:block;height:100%;border-radius:9px;transition:width .5s ease}
     `;
     const st = document.createElement('style');
     st.textContent = css;
@@ -113,16 +115,31 @@ const SalimLoader = (function () {
             <div class="sl-name" id="sl-name"></div>
             <div class="sl-bar"><div class="sl-fill" id="sl-fill"></div></div><div class="sl-pct" id="sl-pct">0%</div></div>`;
         vp.appendChild(ov);
+
         meter = document.createElement('div');
         meter.id = 'salim-load-meter';
-        vp.appendChild(meter);
+        const infoPanel = document.getElementById('model-info-panel');
+        if (infoPanel && infoPanel.parentNode) {
+            let leftStack = document.getElementById('salim-hud-left-stack');
+            if (!leftStack) {
+                leftStack = document.createElement('div');
+                leftStack.id = 'salim-hud-left-stack';
+                leftStack.className = 'flex flex-col items-start gap-1.5 pointer-events-none min-w-0';
+                infoPanel.parentNode.insertBefore(leftStack, infoPanel);
+                leftStack.appendChild(infoPanel);
+            }
+            leftStack.appendChild(meter);
+        } else {
+            vp.appendChild(meter);
+        }
+
         if (!timer) timer = setInterval(updMeter, 1500);
         return true;
     }
 
     function row(label, valTxt, pct) {
         const p = Math.max(0, Math.min(100, pct));
-        return `<div class="r"><span>${label}</span><span>${valTxt}</span></div><div class="t"><i style="width:${p}%;background:${col(p)}"></i></div>`;
+        return `<div class="r"><span>${label}</span><b>${valTxt}</b></div><div class="t"><i style="width:${p}%;background:${col(p)}"></i></div>`;
     }
 
     function updMeter() {
@@ -149,7 +166,8 @@ const SalimLoader = (function () {
             }
         } catch (e) { /* память недоступна */ }
         const total = Math.max(fp, tp, memP);
-        html = `<div class="r" style="color:#fff;font-weight:800"><span>Нагрузка</span><span style="color:${col(total)}">${Math.round(total)}%</span></div>` + html;
+        const c = col(total);
+        html = `<div class="hdr"><span style="display:flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:${c};box-shadow:0 0 6px ${c}"></span>Нагрузка</span><span style="color:${c}">${Math.round(total)}%</span></div>` + html;
         meter.innerHTML = html;
         meter.classList.add('on');
     }

@@ -980,15 +980,15 @@ function generateGcodeThumbnailBase64(size = 200) {
 
 function createRulerBadgeSprite(mainText, subText, accentColor = '#06b6d4') {
         const canvas = document.createElement('canvas');
-        canvas.width = 440;
-        canvas.height = 120;
+        canvas.width = 256;
+        canvas.height = 56;
         const ctx = canvas.getContext('2d');
 
-        // Закругленная информационная плашка
-        ctx.fillStyle = 'rgba(10, 16, 28, 0.90)';
+        // Компактная полупрозрачная капсула
+        ctx.fillStyle = 'rgba(10, 16, 28, 0.76)';
         ctx.strokeStyle = accentColor;
-        ctx.lineWidth = 4;
-        const r = 20, x = 6, y = 6, w = 428, h = 108;
+        ctx.lineWidth = 2.5;
+        const r = 24, x = 4, y = 4, w = 248, h = 48;
         ctx.beginPath();
         ctx.moveTo(x + r, y);
         ctx.lineTo(x + w - r, y);
@@ -1003,29 +1003,37 @@ function createRulerBadgeSprite(mainText, subText, accentColor = '#06b6d4') {
         ctx.fill();
         ctx.stroke();
 
-        // Цветовой индикатор оси
+        // Индикатор оси
         ctx.fillStyle = accentColor;
         ctx.beginPath();
-        ctx.arc(32, 42, 10, 0, Math.PI * 2);
+        ctx.arc(24, 28, 6, 0, Math.PI * 2);
         ctx.fill();
 
-        // Основное числовое значение
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '900 42px monospace';
+        // Чёткий однострочный текст размера
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '800 26px "JetBrains Mono", monospace';
         ctx.textBaseline = 'middle';
-        ctx.fillText(mainText, 54, 44);
-
-        // Пояснение стенки / стороны
-        if (subText) {
-            ctx.fillStyle = accentColor;
-            ctx.font = 'bold 22px sans-serif';
-            ctx.fillText(subText, 54, 86);
-        }
+        ctx.fillText(mainText, 40, 29);
 
         const texture = new THREE.CanvasTexture(canvas);
-        const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false });
+        const mat = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false,
+            depthWrite: false
+        });
         const sprite = new THREE.Sprite(mat);
-        sprite.scale.set(40, 11, 1);
+        sprite.raycast = () => {};
+
+        // Фиксированный 2D-размер на экране: не раздувается при приближении камеры и не ведёт себя как 3D-объект
+        sprite.onBeforeRender = function (rendererArg, sceneArg, cam) {
+            if (!cam) return;
+            const dist = cam.position.distanceTo(this.position);
+            const k = Math.max(0.15, dist * 0.0022);
+            this.scale.set(22 * k, 4.8 * k, 1);
+            this.updateMatrixWorld();
+        };
         return sprite;
     }
 
@@ -1060,73 +1068,55 @@ function createRulerBadgeSprite(mainText, subText, accentColor = '#06b6d4') {
         const midX = (aabb.minX + aabb.maxX) * 0.5;
         const midZ = (aabb.minZ + aabb.maxZ) * 0.5;
 
-        // 1. Габаритный CAD-контур
+        // 1. Тонкий ненавязчивый габаритный контур
         const boxGeo = new THREE.BoxGeometry(w, h, d);
         const edges = new THREE.EdgesGeometry(boxGeo);
         boxGeo.dispose();
-        const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.65 }));
+        const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.28, depthWrite: false }));
         wire.position.set(midX, h * 0.5, midZ);
         objectRulerGroup.add(wire);
 
-        // 2. Проекция основания на стол
-        const fpGeo = new THREE.PlaneGeometry(w, d);
-        fpGeo.rotateX(-Math.PI / 2);
-        const fpMesh = new THREE.Mesh(fpGeo, new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.14, depthWrite: false }));
-        fpMesh.position.set(midX, 0.05, midZ);
-        objectRulerGroup.add(fpMesh);
-
-        // Определение короткой и длинной стенки
-        const isWGreater = w >= d;
-        const xWallDesc = isWGreater ? `Длинная стенка • ${w.toFixed(1)} мм` : `Короткая стенка • ${w.toFixed(1)} мм`;
-        const yWallDesc = isWGreater ? `Короткая стенка • ${d.toFixed(1)} мм` : `Длинная стенка • ${d.toFixed(1)} мм`;
-
-        // 3. Размерная линия X с выносными засечками
+        // 2. Размерная линия X на плоскости стола спереди от модели
         const xLineGeo = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(aabb.minX, 0.6, aabb.maxZ + 6),
-            new THREE.Vector3(aabb.maxX, 0.6, aabb.maxZ + 6),
-            new THREE.Vector3(aabb.minX, 0.6, aabb.maxZ + 3),
-            new THREE.Vector3(aabb.minX, 0.6, aabb.maxZ + 9),
-            new THREE.Vector3(aabb.maxX, 0.6, aabb.maxZ + 3),
-            new THREE.Vector3(aabb.maxX, 0.6, aabb.maxZ + 9)
+            new THREE.Vector3(aabb.minX, 0.2, aabb.maxZ + 4.5),
+            new THREE.Vector3(aabb.maxX, 0.2, aabb.maxZ + 4.5),
+            new THREE.Vector3(aabb.minX, 0.2, aabb.maxZ + 2.0),
+            new THREE.Vector3(aabb.minX, 0.2, aabb.maxZ + 7.0),
+            new THREE.Vector3(aabb.maxX, 0.2, aabb.maxZ + 2.0),
+            new THREE.Vector3(aabb.maxX, 0.2, aabb.maxZ + 7.0)
         ]);
-        objectRulerGroup.add(new THREE.LineSegments(xLineGeo, new THREE.LineBasicMaterial({ color: 0x06b6d4, linewidth: 2 })));
-        const xSprite = createRulerBadgeSprite(`X: ${w.toFixed(1)} мм`, xWallDesc, '#06b6d4');
-        xSprite.position.set(midX, 4.5, aabb.maxZ + 16);
+        objectRulerGroup.add(new THREE.LineSegments(xLineGeo, new THREE.LineBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.75 })));
+        const xSprite = createRulerBadgeSprite(`X ${w.toFixed(1)} мм`, '', '#06b6d4');
+        xSprite.position.set(midX, 0.4, aabb.maxZ + 11.5);
         objectRulerGroup.add(xSprite);
 
-        // 4. Размерная линия Y с засечками
+        // 3. Размерная линия Y на плоскости стола справа от модели
         const yLineGeo = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(aabb.maxX + 6, 0.6, aabb.minZ),
-            new THREE.Vector3(aabb.maxX + 6, 0.6, aabb.maxZ),
-            new THREE.Vector3(aabb.maxX + 3, 0.6, aabb.minZ),
-            new THREE.Vector3(aabb.maxX + 9, 0.6, aabb.minZ),
-            new THREE.Vector3(aabb.maxX + 3, 0.6, aabb.maxZ),
-            new THREE.Vector3(aabb.maxX + 9, 0.6, aabb.maxZ)
+            new THREE.Vector3(aabb.maxX + 4.5, 0.2, aabb.minZ),
+            new THREE.Vector3(aabb.maxX + 4.5, 0.2, aabb.maxZ),
+            new THREE.Vector3(aabb.maxX + 2.0, 0.2, aabb.minZ),
+            new THREE.Vector3(aabb.maxX + 7.0, 0.2, aabb.minZ),
+            new THREE.Vector3(aabb.maxX + 2.0, 0.2, aabb.maxZ),
+            new THREE.Vector3(aabb.maxX + 7.0, 0.2, aabb.maxZ)
         ]);
-        objectRulerGroup.add(new THREE.LineSegments(yLineGeo, new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 2 })));
-        const ySprite = createRulerBadgeSprite(`Y: ${d.toFixed(1)} мм`, yWallDesc, '#10b981');
-        ySprite.position.set(aabb.maxX + 16, 4.5, midZ);
+        objectRulerGroup.add(new THREE.LineSegments(yLineGeo, new THREE.LineBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.75 })));
+        const ySprite = createRulerBadgeSprite(`Y ${d.toFixed(1)} мм`, '', '#10b981');
+        ySprite.position.set(aabb.maxX + 12.5, 0.4, midZ);
         objectRulerGroup.add(ySprite);
 
-        // 5. Размерная стойка высоты Z
+        // 4. Размерная стойка высоты Z сбоку от модели
         const zLineGeo = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(aabb.minX - 6, 0, aabb.maxZ + 6),
-            new THREE.Vector3(aabb.minX - 6, h, aabb.maxZ + 6),
-            new THREE.Vector3(aabb.minX - 9, 0, aabb.maxZ + 6),
-            new THREE.Vector3(aabb.minX - 3, 0, aabb.maxZ + 6),
-            new THREE.Vector3(aabb.minX - 9, h, aabb.maxZ + 6),
-            new THREE.Vector3(aabb.minX - 3, h, aabb.maxZ + 6)
+            new THREE.Vector3(aabb.minX - 4.5, 0, aabb.minZ),
+            new THREE.Vector3(aabb.minX - 4.5, h, aabb.minZ),
+            new THREE.Vector3(aabb.minX - 7.0, 0, aabb.minZ),
+            new THREE.Vector3(aabb.minX - 2.0, 0, aabb.minZ),
+            new THREE.Vector3(aabb.minX - 7.0, h, aabb.minZ),
+            new THREE.Vector3(aabb.minX - 2.0, h, aabb.minZ)
         ]);
-        objectRulerGroup.add(new THREE.LineSegments(zLineGeo, new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 })));
-        const zSprite = createRulerBadgeSprite(`Z: ${h.toFixed(1)} мм`, `Высота модели`, '#f59e0b');
-        zSprite.position.set(aabb.minX - 16, h * 0.5, aabb.maxZ + 16);
+        objectRulerGroup.add(new THREE.LineSegments(zLineGeo, new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.75 })));
+        const zSprite = createRulerBadgeSprite(`Z ${h.toFixed(1)} мм`, '', '#f59e0b');
+        zSprite.position.set(aabb.minX - 12.5, h * 0.5, aabb.minZ);
         objectRulerGroup.add(zSprite);
-
-        // 6. Верхняя сводная плашка с диагональю
-        const diagMM = Math.hypot(w, d).toFixed(1);
-        const topSprite = createRulerBadgeSprite(`${w.toFixed(1)}×${d.toFixed(1)}×${h.toFixed(1)} мм`, `Диагональ: ${diagMM} мм`, '#c084fc');
-        topSprite.position.set(midX, h + 12, midZ);
-        objectRulerGroup.add(topSprite);
 
         triggerSceneRender();
     }
