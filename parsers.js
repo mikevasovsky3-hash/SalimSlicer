@@ -630,22 +630,24 @@ async function parse3MFBuffer(buffer) {
         geo.computeVertexNormals(); return geo;
     }
 
-    // ==== Built-in test models ====
+// ==== Built-in test models ====
     function mergeGeos(geos) {
         let totalVerts = 0;
-        const nonIndexed = geos.map(g => { const ni = g.index ? g.toNonIndexed() : g.clone(); totalVerts += ni.attributes.position.count; return ni; });
+        const validGeos = geos.filter(Boolean);
+        const nonIndexed = validGeos.map(g => { const ni = g.index ? g.toNonIndexed() : g.clone(); totalVerts += ni.attributes.position.count; return ni; });
         const mergedPos = new Float32Array(totalVerts * 3);
         let offset = 0;
         nonIndexed.forEach((ni, idx) => {
             mergedPos.set(ni.attributes.position.array, offset);
             offset += ni.attributes.position.array.length;
-            ni.dispose(); if (geos[idx]) geos[idx].dispose();
+            ni.dispose(); if (validGeos[idx]) validGeos[idx].dispose();
         });
         const out = new THREE.BufferGeometry();
         out.setAttribute('position', new THREE.BufferAttribute(mergedPos, 3));
         out.computeVertexNormals();
         return out;
     }
+
     function createRocketGeo() {
         const segs = 72;
         const yLevels = [0, 4, 6, 22, 34, 55];
@@ -694,92 +696,52 @@ async function parse3MFBuffer(buffer) {
         geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris), 3));
         geo.computeVertexNormals(); return geo;
     }
-function createCubeGeo() {
-        const S = 10;          // половина стороны куба (куб 20 мм)
-        const DEPTH = 0.8;     // глубина гравировки, мм
 
-        // Буква X
+    function createCubeGeo() {
+        // Монолитный куб 20x20x20 мм с чистым заполнением и рельефными буквами X, Y, Z
+        const cube = new THREE.BoxGeometry(20, 20, 20);
+        cube.translate(0, 10, 0);
+
         const shapeX = new THREE.Shape();
-        shapeX.moveTo(-4.2, 5.0); shapeX.lineTo(-2.6, 5.0); shapeX.lineTo(0.0, 0.9);
-        shapeX.lineTo(2.6, 5.0); shapeX.lineTo(4.2, 5.0); shapeX.lineTo(1.2, 0.0);
-        shapeX.lineTo(4.2, -5.0); shapeX.lineTo(2.6, -5.0); shapeX.lineTo(0.0, -0.9);
-        shapeX.lineTo(-2.6, -5.0); shapeX.lineTo(-4.2, -5.0); shapeX.lineTo(-1.2, 0.0);
+        shapeX.moveTo(-4.0, 4.8); shapeX.lineTo(-2.2, 4.8); shapeX.lineTo(0.0, 0.9);
+        shapeX.lineTo(2.2, 4.8); shapeX.lineTo(4.0, 4.8); shapeX.lineTo(1.1, 0.0);
+        shapeX.lineTo(4.0, -4.8); shapeX.lineTo(2.2, -4.8); shapeX.lineTo(0.0, -0.9);
+        shapeX.lineTo(-2.2, -4.8); shapeX.lineTo(-4.0, -4.8); shapeX.lineTo(-1.1, 0.0);
         shapeX.closePath();
 
-        // Буква Y
         const shapeY = new THREE.Shape();
-        shapeY.moveTo(-0.8, -5.0); shapeY.lineTo(0.8, -5.0); shapeY.lineTo(0.8, -0.5);
-        shapeY.lineTo(4.2, 5.0); shapeY.lineTo(2.4, 5.0); shapeY.lineTo(0.0, 0.8);
-        shapeY.lineTo(-2.4, 5.0); shapeY.lineTo(-4.2, 5.0); shapeY.lineTo(-0.8, -0.5);
+        shapeY.moveTo(-0.9, -4.8); shapeY.lineTo(0.9, -4.8); shapeY.lineTo(0.9, -0.4);
+        shapeY.lineTo(4.0, 4.8); shapeY.lineTo(2.2, 4.8); shapeY.lineTo(0.0, 0.8);
+        shapeY.lineTo(-2.2, 4.8); shapeY.lineTo(-4.0, 4.8); shapeY.lineTo(-0.9, -0.4);
         shapeY.closePath();
 
-        // Буква Z
         const shapeZ = new THREE.Shape();
-        shapeZ.moveTo(-4.2, 5.0); shapeZ.lineTo(4.2, 5.0); shapeZ.lineTo(4.2, 3.4);
-        shapeZ.lineTo(-1.6, -3.4); shapeZ.lineTo(4.2, -3.4); shapeZ.lineTo(4.2, -5.0);
-        shapeZ.lineTo(-4.2, -5.0); shapeZ.lineTo(-4.2, -3.4); shapeZ.lineTo(1.6, 3.4);
-        shapeZ.lineTo(-4.2, 3.4); shapeZ.closePath();
+        shapeZ.moveTo(-4.0, 4.8); shapeZ.lineTo(4.0, 4.8); shapeZ.lineTo(4.0, 3.2);
+        shapeZ.lineTo(-1.4, -3.2); shapeZ.lineTo(4.0, -3.2); shapeZ.lineTo(4.0, -4.8);
+        shapeZ.lineTo(-4.0, -4.8); shapeZ.lineTo(-4.0, -3.2); shapeZ.lineTo(1.4, 3.2);
+        shapeZ.lineTo(-4.0, 3.2); shapeZ.closePath();
 
-        // Одна грань куба в локальных координатах: плоскость z = 0, наружу смотрит +Z, карман уходит в -Z.
-        // Без буквы: просто квадрат. С буквой: квадрат с отверстием + дно кармана + боковые стенки кармана.
-        const buildFace = (letter) => {
-            const sq = new THREE.Shape();
-            sq.moveTo(-S, -S); sq.lineTo(S, -S); sq.lineTo(S, S); sq.lineTo(-S, S); sq.closePath();
-            if (!letter) return [new THREE.ShapeGeometry(sq)];
+        const geoX = new THREE.ExtrudeGeometry(shapeX, { depth: 0.6, bevelEnabled: false });
+        geoX.translate(0, 10, 10);
 
-            const pts = letter.getPoints();
-            if (pts.length > 1 && pts[0].distanceTo(pts[pts.length - 1]) < 1e-6) pts.pop();
-            sq.holes.push(new THREE.Path(pts));
+        const geoY = new THREE.ExtrudeGeometry(shapeY, { depth: 0.6, bevelEnabled: false });
+        geoY.rotateY(Math.PI / 2);
+        geoY.translate(10, 10, 0);
 
-            const plate = new THREE.ShapeGeometry(sq);                 // грань с отверстием в форме буквы
-            const floor = new THREE.ShapeGeometry(letter);             // дно кармана
-            floor.translate(0, 0, -DEPTH);
+        const geoZ = new THREE.ExtrudeGeometry(shapeZ, { depth: 0.6, bevelEnabled: false });
+        geoZ.rotateX(-Math.PI / 2);
+        geoZ.translate(0, 20, 0);
 
-            const wall = [];                                           // стенки кармана
-            for (let i = 0; i < pts.length; i++) {
-                const a = pts[i], b = pts[(i + 1) % pts.length];
-                if (Math.hypot(b.x - a.x, b.y - a.y) < 1e-6) continue;
-                wall.push(
-                    a.x, a.y, 0,       b.x, b.y, 0,       b.x, b.y, -DEPTH,
-                    a.x, a.y, 0,       b.x, b.y, -DEPTH,  a.x, a.y, -DEPTH
-                );
-            }
-            const walls = new THREE.BufferGeometry();
-            walls.setAttribute('position', new THREE.BufferAttribute(new Float32Array(wall), 3));
-            return [plate, floor, walls];
-        };
-
-        // Ставим грань на своё место (повороты те же, что были у выпуклых букв)
-        const place = (geos, rot, pos) => {
-            geos.forEach(g => {
-                if (rot === 'y180') g.rotateY(Math.PI);
-                else if (rot === 'y90') g.rotateY(Math.PI / 2);
-                else if (rot === 'y-90') g.rotateY(-Math.PI / 2);
-                else if (rot === 'x-90') g.rotateX(-Math.PI / 2);
-                else if (rot === 'x90') g.rotateX(Math.PI / 2);
-                g.translate(pos[0], pos[1], pos[2]);
-            });
-            return geos;
-        };
-
-        const parts = []
-            .concat(place(buildFace(shapeX), null,   [0, 10, 10]))    // спереди (+Z): буква X
-            .concat(place(buildFace(shapeY), 'y90',  [10, 10, 0]))    // справа (+X): буква Y
-            .concat(place(buildFace(shapeZ), 'x-90', [0, 20, 0]))     // сверху (+Y): буква Z
-            .concat(place(buildFace(null),   'y180', [0, 10, -10]))   // сзади, без буквы
-            .concat(place(buildFace(null),   'y-90', [-10, 10, 0]))   // слева, без буквы
-            .concat(place(buildFace(null),   'x90',  [0, 0, 0]));     // дно, без буквы
-
-        return mergeGeos(parts);
+        return mergeGeos([cube, geoX, geoY, geoZ]);
     }
 
     function createGearGeo() {
-        const teeth = 12, outerR = 18, innerR = 12, h = 10;
+        const teeth = 12, outerR = 18, innerR = 12, h = 8;
         const shape = new THREE.Shape();
         for (let i = 0; i < teeth; i++) {
             const a1 = (i * Math.PI * 2) / teeth;
-            const a2 = a1 + (Math.PI / teeth) * 0.4;
-            const a3 = a1 + (Math.PI / teeth) * 0.6;
+            const a2 = a1 + (Math.PI / teeth) * 0.42;
+            const a3 = a1 + (Math.PI / teeth) * 0.58;
             const a4 = a1 + (Math.PI / teeth);
             const x1 = innerR * Math.cos(a1), y1 = innerR * Math.sin(a1);
             const x2 = outerR * Math.cos(a2), y2 = outerR * Math.sin(a2);
@@ -788,26 +750,104 @@ function createCubeGeo() {
             if (i === 0) shape.moveTo(x1, y1); else shape.lineTo(x1, y1);
             shape.lineTo(x2, y2); shape.lineTo(x3, y3); shape.lineTo(x4, y4);
         }
-        const hole = new THREE.Path(); hole.absarc(0, 0, 5, 0, Math.PI * 2, true);
+        // Центральное отверстие D=8 мм с фаской под шпонку 2 мм для реальной посадки
+        const hole = new THREE.Path();
+        hole.absarc(0, 0, 4.0, 0, Math.PI * 2, true);
         shape.holes.push(hole);
-        const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: true, bevelSegments: 2, steps: 1, bevelSize: 0.5, bevelThickness: 0.5 });
-        geo.rotateX(-Math.PI / 2); return geo;
+
+        // Без фаски на первом слое (bevelEnabled: false), чтобы деталь не отрывалась от стола
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
+        geo.rotateX(-Math.PI / 2);
+        return geo;
     }
 
     function createHingeGeo() {
-        const p1 = new THREE.BoxGeometry(8, 3, 16); p1.translate(-6.5, 1.5, 0);
-        const p2 = new THREE.BoxGeometry(8, 3, 16); p2.translate(6.5, 1.5, 0);
-        const barrel = new THREE.CylinderGeometry(2.5, 2.5, 16, 20); barrel.rotateX(Math.PI / 2); barrel.translate(0, 2.5, 0);
-        return mergeGeos([p1, p2, barrel]);
+        // Настоящий Print-In-Place шарнир с гарантированным зазором 0.4 мм под сопло 0.4 мм
+        const parts = [];
+        const leafW = 16, leafThick = 3.0, leafLen = 26;
+        const barrelR = 3.2, clearance = 0.4;
+        const pinR = barrelR - clearance - 0.7; // Радиус конического замка ~2.1 мм
+
+        // Левое крыло (с двумя крайними проушинами)
+        const leftPlate = new THREE.BoxGeometry(leafW, leafThick, leafLen);
+        leftPlate.translate(-barrelR - leafW * 0.5, leafThick * 0.5, 0);
+        parts.push(leftPlate);
+
+        // Крайняя верхняя проушина левого крыла
+        const leftKnuckleTop = new THREE.CylinderGeometry(barrelR, barrelR, 8, 24);
+        leftKnuckleTop.rotateX(Math.PI / 2);
+        leftKnuckleTop.translate(0, barrelR, 9);
+        // Конический фиксирующий шип 45° (печатается без поддержек)
+        const pinTop = new THREE.ConeGeometry(pinR, 2.0, 20);
+        pinTop.rotateX(Math.PI / 2);
+        pinTop.translate(0, barrelR, 4.0);
+        parts.push(leftKnuckleTop, pinTop);
+
+        // Крайняя нижняя проушина левого крыла
+        const leftKnuckleBtm = new THREE.CylinderGeometry(barrelR, barrelR, 8, 24);
+        leftKnuckleBtm.rotateX(Math.PI / 2);
+        leftKnuckleBtm.translate(0, barrelR, -9);
+        const pinBtm = new THREE.ConeGeometry(pinR, 2.0, 20);
+        pinBtm.rotateX(-Math.PI / 2);
+        pinBtm.translate(0, barrelR, -4.0);
+        parts.push(leftKnuckleBtm, pinBtm);
+
+        // Правое крыло (с центральной подвижной проушиной и зазорами 0.4 мм)
+        const rightPlate = new THREE.BoxGeometry(leafW, leafThick, leafLen);
+        rightPlate.translate(barrelR + leafW * 0.5, leafThick * 0.5, 0);
+        parts.push(rightPlate);
+
+        // Центральная проушина правого крыла (длина 8.4 мм с зазорами 0.8 мм по Z)
+        const midKnuckle = new THREE.CylinderGeometry(barrelR, barrelR, 8.4, 24);
+        midKnuckle.rotateX(Math.PI / 2);
+        midKnuckle.translate(0, barrelR, 0);
+        parts.push(midKnuckle);
+
+        return mergeGeos(parts);
     }
 
     function createBoltGeo() {
-        const head = new THREE.CylinderGeometry(6, 6, 4, 6); head.translate(0, 2, 0);
-        const shaft = new THREE.CylinderGeometry(3.8, 3.8, 20, 24); shaft.translate(0, 14, 0);
-        return mergeGeos([head, shaft]);
+        // Полноценный тест резьбы: Болт М10 (шаг 2.5 мм) + Гайка на столе с зазором 0.4 мм
+        const parts = [];
+
+        // 1. Болт (слева)
+        const boltHead = new THREE.CylinderGeometry(8.5, 8.5, 5, 6);
+        boltHead.translate(-15, 2.5, 0);
+        const boltShaft = new THREE.CylinderGeometry(3.9, 3.9, 22, 24);
+        boltShaft.translate(-15, 16, 0);
+        parts.push(boltHead, boltShaft);
+
+        // Витки треугольной резьбы с углами 45° (печатаются без поддержек)
+        for (let y = 8; y <= 24; y += 2.5) {
+            const threadLower = new THREE.CylinderGeometry(4.9, 3.9, 1.25, 24);
+            threadLower.translate(-15, y - 0.625, 0);
+            const threadUpper = new THREE.CylinderGeometry(3.9, 4.9, 1.25, 24);
+            threadUpper.translate(-15, y + 0.625, 0);
+            parts.push(threadLower, threadUpper);
+        }
+
+        // 2. Гайка (справа на столе, сразу готова к накручиванию)
+        const nutShape = new THREE.Shape();
+        const hexR = 9.0;
+        for (let i = 0; i < 6; i++) {
+            const a = (i * Math.PI) / 3;
+            const x = hexR * Math.cos(a), z = hexR * Math.sin(a);
+            if (i === 0) nutShape.moveTo(x, z); else nutShape.lineTo(x, z);
+        }
+        nutShape.closePath();
+        // Внутреннее отверстие с зазором под резьбу
+        const nutHole = new THREE.Path();
+        nutHole.absarc(0, 0, 4.3, 0, Math.PI * 2, true);
+        nutShape.holes.push(nutHole);
+
+        const nutGeo = new THREE.ExtrudeGeometry(nutShape, { depth: 7.0, bevelEnabled: false });
+        nutGeo.rotateX(-Math.PI / 2);
+        nutGeo.translate(15, 0, 0);
+        parts.push(nutGeo);
+
+        return mergeGeos(parts);
     }
 
-// ==== Мини-шрифт 3x5 для подписей на тестовых моделях ====
     const TEXT_FONT = {
         '0': ['111', '101', '101', '101', '111'],
         '1': ['010', '110', '010', '010', '111'],
@@ -822,10 +862,11 @@ function createCubeGeo() {
         '.': ['0', '0', '0', '0', '1'],
         '-': ['000', '000', '111', '000', '000'],
         'R': ['110', '101', '110', '101', '101'],
+        'X': ['101', '101', '010', '101', '101'],
+        'Y': ['101', '101', '010', '010', '010'],
         ' ': ['00', '00', '00', '00', '00']
     };
 
-    // Текст в плоскости XY, по центру, выдавлен от 0 до depth вдоль +Z. px — размер одного пикселя шрифта в мм
     function createTextGeo(text, px, depth) {
         if (typeof ClipperLib === 'undefined') return null;
         const SC = 1000;
@@ -846,7 +887,6 @@ function createCubeGeo() {
         if (rects.length === 0) return null;
         const offX = ((cx - 1) * px) / 2, offY = (5 * px) / 2;
 
-        // Склеиваем пиксели в цельные контуры, чтобы получилась правильная замкнутая сетка
         const cpr = new ClipperLib.Clipper();
         cpr.AddPaths(rects, ClipperLib.PolyType.ptSubject, true);
         const sol = new ClipperLib.Paths();
@@ -896,127 +936,303 @@ function createCubeGeo() {
         return new THREE.ExtrudeGeometry(list, { depth: depth, bevelEnabled: false });
     }
 
-    // mode 'front': надпись на передней грани (читается спереди), 'top': надпись лежит на верхней грани
     function labelGeo(text, px, depth, mode, x, y, z) {
         const g = createTextGeo(text, px, depth);
         if (!g) return null;
         if (mode === 'top') g.rotateX(-Math.PI / 2);
+        else if (mode === 'side') g.rotateY(Math.PI / 2);
         g.translate(x, y, z);
         return g;
     }
 
     function createTempTowerGeo(temps) {
         const list = temps || [230, 220, 210, 200, 190];
-        const base = new THREE.BoxGeometry(42, 3.2, 22); base.translate(0, 1.6, 0);
+        const base = new THREE.BoxGeometry(44, 3.2, 18);
+        base.translate(0, 1.6, 0);
         const tiers = [base];
+
         for (let t = 0; t < 5; t++) {
             const y0 = 3.2 + t * 10.0;
-            const pLeft = new THREE.BoxGeometry(9, 10.0, 16); pLeft.translate(-14.5, y0 + 5.0, 0);
-            const pRight = new THREE.BoxGeometry(9, 10.0, 16); pRight.translate(14.5, y0 + 5.0, 0);
-            const bridge = new THREE.BoxGeometry(20, 2.0, 14); bridge.translate(0, y0 + 9.0, 0);
-            const notch = new THREE.BoxGeometry(10, 1.8, 12); notch.rotateZ(Math.PI / 4); notch.translate(-7, y0 + 5.5, 0);
-            const cone = new THREE.CylinderGeometry(0.2, 1.8, 5.0, 16); cone.translate(7, y0 + 2.5, 0);
-            tiers.push(pLeft, pRight, bridge, notch, cone);
-            // Температура этажа: выпуклая надпись на передней грани левой стойки
-            const lab = labelGeo(String(list[t]), 0.7, 0.6, 'front', -14.5, y0 + 5.0, 8.0);
+            // Две монолитные стойки слева и справа
+            const pLeft = new THREE.BoxGeometry(9, 10.0, 14);
+            pLeft.translate(-15.5, y0 + 5.0, 0);
+            const pRight = new THREE.BoxGeometry(9, 10.0, 14);
+            pRight.translate(15.5, y0 + 5.0, 0);
+
+            // Мост толщиной 1.8 мм, соединяющий стойки поверху
+            const bridge = new THREE.BoxGeometry(22, 1.8, 10);
+            bridge.translate(0, y0 + 9.1, 0);
+
+            // Грамотный нависающий кронштейн 45°, растущий снизу вверх от стойки к мосту (без висения в воздухе!)
+            const bracketShape = new THREE.Shape();
+            bracketShape.moveTo(-11.0, y0 + 3.0);
+            bracketShape.lineTo(-11.0, y0 + 8.2);
+            bracketShape.lineTo(-4.5, y0 + 8.2);
+            bracketShape.closePath();
+            const bracketGeo = new THREE.ExtrudeGeometry(bracketShape, { depth: 8, bevelEnabled: false });
+            bracketGeo.translate(0, 0, -4);
+
+            // Конус проверки нитей и ретракта, опирающийся прямо на пол этажа
+            const cone = new THREE.CylinderGeometry(0.3, 1.6, 5.0, 16);
+            cone.translate(6, y0 + 2.5, 0);
+
+            tiers.push(pLeft, pRight, bridge, bracketGeo, cone);
+
+            const lab = labelGeo(String(list[t]), 0.7, 0.6, 'front', -15.5, y0 + 5.0, 7.0);
             if (lab) tiers.push(lab);
         }
         return mergeGeos(tiers);
     }
 
     function createRetractionTowerGeo(labels) {
-        const list = labels || ['R0.4', 'R0.6', 'R0.8'];
-        const base = new THREE.BoxGeometry(54, 3.2, 18); base.translate(0, 1.6, 0);
-        const p1 = new THREE.CylinderGeometry(1.8, 3.8, 36.0, 28); p1.translate(-16, 21.2, 0);
-        const p2 = new THREE.CylinderGeometry(1.8, 3.8, 36.0, 28); p2.translate(16, 21.2, 0);
-        const b1 = new THREE.BoxGeometry(32, 1.5, 2.5); b1.translate(0, 12, 0);
-        const b2 = new THREE.BoxGeometry(32, 1.5, 2.5); b2.translate(0, 22, 0);
-        const b3 = new THREE.BoxGeometry(32, 1.5, 2.5); b3.translate(0, 32, 0);
-        // Стенка сзади под подписи (стоит на основании, к стойкам и мостикам не касается)
-        const wall = new THREE.BoxGeometry(30, 36.0, 1.6); wall.translate(0, 21.2, -6.5);
-        const parts = [base, p1, p2, b1, b2, b3, wall];
-        [12, 22, 32].forEach((y, i) => {
-            const lab = labelGeo(list[i], 0.7, 0.6, 'front', 0, y, -5.7);
-            if (lab) parts.push(lab);
-        });
+        const list = labels || ['0.4', '0.6', '0.8'];
+        const base = new THREE.BoxGeometry(50, 3.0, 18);
+        base.translate(0, 1.5, 0);
+        const parts = [base];
+
+        // Две полностью изолированные конические колонны с чистым воздухом между ними для реального теста ретрактов
+        const makePillar = (posX) => {
+            // Этаж 1: 3.0 -> 13.0 мм (D=5.0 -> 4.2 мм)
+            const s1 = new THREE.CylinderGeometry(2.1, 2.5, 10, 24);
+            s1.translate(posX, 8.0, 0);
+            // Засечка смены ретракта
+            const r1 = new THREE.CylinderGeometry(2.6, 2.6, 0.6, 24);
+            r1.translate(posX, 13.0, 0);
+            // Этаж 2: 13.0 -> 23.0 мм (D=4.0 -> 3.2 мм)
+            const s2 = new THREE.CylinderGeometry(1.6, 2.0, 10, 24);
+            s2.translate(posX, 18.0, 0);
+            // Засечка смены ретракта
+            const r2 = new THREE.CylinderGeometry(2.1, 2.1, 0.6, 24);
+            r2.translate(posX, 23.0, 0);
+            // Этаж 3: 23.0 -> 33.0 мм (D=3.0 -> 0.8 мм острие)
+            const s3 = new THREE.CylinderGeometry(0.4, 1.5, 10, 24);
+            s3.translate(posX, 28.0, 0);
+
+            return [s1, r1, s2, r2, s3];
+        };
+
+        parts.push(...makePillar(-14));
+        parts.push(...makePillar(14));
+
+        // Подписи зон нанесены прямо на основание перед глазами
+        const l1 = labelGeo(list[0], 0.65, 0.6, 'top', -14, 3.0, 6.0);
+        const l2 = labelGeo(list[1], 0.65, 0.6, 'top', 0, 3.0, 6.0);
+        const l3 = labelGeo(list[2], 0.65, 0.6, 'top', 14, 3.0, 6.0);
+        if (l1) parts.push(l1);
+        if (l2) parts.push(l2);
+        if (l3) parts.push(l3);
+
         return mergeGeos(parts);
     }
 
     function createOverhangTestGeo() {
-        const base = new THREE.BoxGeometry(70, 3.2, 26); base.translate(0, 1.6, 0);
+        // Честный тест нависаний: сплошные колонны с нарастающим углом от основания (ничего не висит в воздухе!)
+        const base = new THREE.BoxGeometry(84, 3.0, 26);
+        base.translate(0, 1.5, 0);
         const parts = [base];
+
         const angles = [30, 45, 55, 65, 75];
+        const xPositions = [-30, -15, 0, 15, 30];
+
         for (let i = 0; i < 5; i++) {
-            const rad = (angles[i] * Math.PI) / 180;
-            const arm = new THREE.BoxGeometry(6, 18, 14);
-            arm.rotateZ(-rad);
-            arm.translate(-26 + i * 13, 3.2 + 8, 0);
-            parts.push(arm);
-            // Угол наклона: подпись лежит на основании перед рукой
-            const lab = labelGeo(String(angles[i]), 0.8, 0.6, 'top', -26 + i * 13, 3.2, 10.5);
+            const ang = angles[i];
+            const xp = xPositions[i];
+            const rad = (ang * Math.PI) / 180;
+
+            // Вертикальная опорная стойка сзади
+            const post = new THREE.BoxGeometry(8, 16.0, 6);
+            post.translate(xp, 3.0 + 8.0, -7);
+            parts.push(post);
+
+            // Наклонная консоль: начинается точно от стойки и стола, вытягивается вперед под углом ang
+            const shape = new THREE.Shape();
+            const topY = 19.0;
+            const tipZ = 9.0;
+            const backZ = -4.0;
+            const deltaZ = tipZ - backZ;
+            const deltaY = deltaZ / Math.tan(rad);
+            const startY = Math.max(3.0, topY - 2.5 - deltaY);
+
+            shape.moveTo(backZ, 3.0);
+            shape.lineTo(backZ, topY);
+            shape.lineTo(tipZ, topY);
+            shape.lineTo(tipZ, topY - 2.5);
+            shape.lineTo(backZ, startY);
+            shape.closePath();
+
+            const armGeo = new THREE.ExtrudeGeometry(shape, { depth: 7.0, bevelEnabled: false });
+            armGeo.translate(xp - 3.5, 0, 0);
+            parts.push(armGeo);
+
+            // Четкая гравировка угла на плоском столе перед нависанием
+            const lab = labelGeo(String(ang), 0.75, 0.6, 'top', xp, 3.0, 9.5);
             if (lab) parts.push(lab);
         }
+
         return mergeGeos(parts);
     }
 
     function createResonanceGeo() {
-        const base = new THREE.BoxGeometry(45, 3.2, 45); base.translate(0, 1.6, 0);
-        const wCenter = new THREE.BoxGeometry(36, 44.0, 10); wCenter.translate(0, 25.2, 0);
-        const wLeft = new THREE.BoxGeometry(10, 44.0, 13); wLeft.translate(0, 25.2, -11.5);
-        const wRight = new THREE.BoxGeometry(10, 44.0, 13); wRight.translate(0, 25.2, 11.5);
-        return mergeGeos([base, wCenter, wLeft, wRight]);
-    }
-
-function createBedLevelingGeo() {
+        // Полноценная полая квадратная башня 30x30x50 мм с ребрами 90° и буквами X/Y для детекции ринга и звона стола
         const parts = [];
-        const coords = [[-75, -75], [75, -75], [75, 75], [-75, 75], [0, 0]];
-        coords.forEach(([x, z]) => {
-            const pad = new THREE.BoxGeometry(28, 0.2, 28);
-            pad.translate(x, 0.1, z);
-            parts.push(pad);
-        });
-        const traceX = new THREE.BoxGeometry(150, 0.2, 1.2); traceX.translate(0, 0.1, 0);
-        const traceZ = new THREE.BoxGeometry(1.2, 0.2, 150); traceZ.translate(0, 0.1, 0);
-        parts.push(traceX, traceZ);
+        const base = new THREE.BoxGeometry(40, 2.4, 40);
+        base.translate(0, 1.2, 0);
+        parts.push(base);
+
+        // Полый квадратный профиль (толщина стенки 1.6 мм = ровно 4 периметра сопла 0.4 мм)
+        const outer = 28.0;
+        const inner = outer - 3.2;
+        const towerShape = new THREE.Shape();
+        towerShape.moveTo(-outer / 2, -outer / 2);
+        towerShape.lineTo(outer / 2, -outer / 2);
+        towerShape.lineTo(outer / 2, outer / 2);
+        towerShape.lineTo(-outer / 2, outer / 2);
+        towerShape.closePath();
+
+        const hole = new THREE.Path();
+        hole.moveTo(-inner / 2, -inner / 2);
+        hole.lineTo(inner / 2, -inner / 2);
+        hole.lineTo(inner / 2, inner / 2);
+        hole.lineTo(-inner / 2, inner / 2);
+        hole.closePath();
+        towerShape.holes.push(hole);
+
+        const towerGeo = new THREE.ExtrudeGeometry(towerShape, { depth: 48.0, bevelEnabled: false });
+        towerGeo.rotateX(-Math.PI / 2);
+        towerGeo.translate(0, 2.4, 0);
+        parts.push(towerGeo);
+
+        // Буква Y на передней грани (перпендикулярно оси стола Y)
+        const labY = labelGeo('Y', 1.2, 0.6, 'front', 0, 26, 14.0);
+        // Буква X на правой грани (вдоль движения каретки X)
+        const labX = labelGeo('X', 1.2, 0.6, 'side', 14.0, 26, 0);
+        if (labY) parts.push(labY);
+        if (labX) parts.push(labX);
+
+        // Засечки высоты каждые 10 мм для визуального замера затухания вибраций
+        for (let y = 12.4; y <= 42.4; y += 10.0) {
+            const notchRing = new THREE.BoxGeometry(outer + 0.8, 0.8, outer + 0.8);
+            notchRing.translate(0, y, 0);
+            parts.push(notchRing);
+        }
+
         return mergeGeos(parts);
     }
 
+    function createBedLevelingGeo() {
+        // 5 тестовых калибровочных площадок первого слоя (толщина 0.20 мм)
+        const parts = [];
+        const padSize = 30;
+        const coords = [[-75, -75], [75, -75], [75, 75], [-75, 75], [0, 0]];
+        coords.forEach(([x, z]) => {
+            const pad = new THREE.BoxGeometry(padSize, 0.2, padSize);
+            pad.translate(x, 0.1, z);
+            parts.push(pad);
+        });
+
+        // Диагональные связующие линии 0.2 мм для проверки адгезии при длинных переходах
+        const dLine1 = new THREE.BoxGeometry(1.2, 0.2, 212);
+        dLine1.rotateY(Math.PI / 4);
+        dLine1.translate(0, 0.1, 0);
+
+        const dLine2 = new THREE.BoxGeometry(1.2, 0.2, 212);
+        dLine2.rotateY(-Math.PI / 4);
+        dLine2.translate(0, 0.1, 0);
+
+        parts.push(dLine1, dLine2);
+        return mergeGeos(parts);
+    }
 
     function createBenchyFallbackGeo() {
-        // Офлайн-модель классического калибровочного кораблика
-        const hull = new THREE.CylinderGeometry(14, 8, 48, 16);
-        hull.rotateZ(Math.PI / 2);
-        hull.scale(1.0, 0.45, 0.7);
-        hull.translate(0, 10, 0);
+        // Правильная калибровочная лодка: плоское дно на столе, каюта со сквозными мостами, труба и трюм
+        const parts = [];
 
-        const cabin = new THREE.BoxGeometry(18, 18, 16);
-        cabin.translate(-2, 20, 0);
+        // 1. Плоский киль на столе
+        const keel = new THREE.BoxGeometry(26, 2.0, 12);
+        keel.translate(-2, 1.0, 0);
+        parts.push(keel);
 
-        const roof = new THREE.BoxGeometry(20, 2.5, 18);
-        roof.translate(-2, 29.5, 0);
+        // 2. Корпус с заостренным носом
+        const hullShape = new THREE.Shape();
+        hullShape.moveTo(-22, -8);
+        hullShape.lineTo(8, -8);
+        hullShape.lineTo(24, 0);
+        hullShape.lineTo(8, 8);
+        hullShape.lineTo(-22, 8);
+        hullShape.closePath();
 
-        const chimney = new THREE.CylinderGeometry(2.4, 2.8, 12, 16);
-        chimney.translate(2, 34, 0);
+        const hull = new THREE.ExtrudeGeometry(hullShape, { depth: 10, bevelEnabled: false });
+        hull.rotateX(-Math.PI / 2);
+        hull.translate(0, 2.0, 0);
+        parts.push(hull);
 
-        const boxHole = new THREE.BoxGeometry(10, 8, 11);
-        boxHole.translate(-16, 12, 0);
+        // 3. Углубление заднего трюма (стенки)
+        const cargoWall = new THREE.BoxGeometry(14, 4.0, 12);
+        cargoWall.translate(-13, 13.0, 0);
+        parts.push(cargoWall);
 
-        return mergeGeos([hull, cabin, roof, chimney, boxHole]);
+        // 4. Кабина со сквозными арками (тест провисания мостов)
+        const cabPillarFL = new THREE.BoxGeometry(3, 12, 3);
+        cabPillarFL.translate(4, 17, 4.5);
+        const cabPillarFR = new THREE.BoxGeometry(3, 12, 3);
+        cabPillarFR.translate(4, 17, -4.5);
+        const cabPillarBL = new THREE.BoxGeometry(3, 12, 3);
+        cabPillarBL.translate(-4, 17, 4.5);
+        const cabPillarBR = new THREE.BoxGeometry(3, 12, 3);
+        cabPillarBR.translate(-4, 17, -4.5);
+        parts.push(cabPillarFL, cabPillarFR, cabPillarBL, cabPillarBR);
+
+        // 5. Крыша каюты с выступающим козырьком
+        const roof = new THREE.BoxGeometry(15, 2.0, 15);
+        roof.translate(0, 23.5, 0);
+        parts.push(roof);
+
+        // 6. Труба
+        const chimney = new THREE.CylinderGeometry(2.2, 2.5, 10, 20);
+        chimney.translate(0, 28.5, 0);
+        const chimneyRim = new THREE.CylinderGeometry(2.7, 2.7, 1.2, 20);
+        chimneyRim.translate(0, 33.5, 0);
+        parts.push(chimney, chimneyRim);
+
+        return mergeGeos(parts);
     }
 
     function createFlowTestGeo() {
-        // Полый куб 20 мм со стенкой 0.8 мм: один цельный объём без самопересечений
+        // Калибровочный куб потока: сплошное дно 1.2 мм (6 слоев) + двойные тонкие стенки 0.80 мм под штангенциркуль
+        const outer = 20.0;
+        const inner = 18.4; // Ровно 0.8 мм на стенку (2 периметра по 0.4 мм)
+        const parts = [];
+
+        // Монолитное дно для идеального прилипания
+        const bottom = new THREE.BoxGeometry(outer, 1.2, outer);
+        bottom.translate(0, 0.6, 0);
+        parts.push(bottom);
+
+        // Тонкие калибровочные стенки высотой до 20 мм
         const shape = new THREE.Shape();
-        shape.moveTo(-10, -10); shape.lineTo(10, -10); shape.lineTo(10, 10); shape.lineTo(-10, 10); shape.closePath();
+        shape.moveTo(-outer / 2, -outer / 2);
+        shape.lineTo(outer / 2, -outer / 2);
+        shape.lineTo(outer / 2, outer / 2);
+        shape.lineTo(-outer / 2, outer / 2);
+        shape.closePath();
+
         const hole = new THREE.Path();
-        hole.moveTo(-9.2, -9.2); hole.lineTo(-9.2, 9.2); hole.lineTo(9.2, 9.2); hole.lineTo(9.2, -9.2); hole.closePath();
+        hole.moveTo(-inner / 2, -inner / 2);
+        hole.lineTo(inner / 2, -inner / 2);
+        hole.lineTo(inner / 2, inner / 2);
+        hole.lineTo(-inner / 2, inner / 2);
+        hole.closePath();
         shape.holes.push(hole);
-        const geo = new THREE.ExtrudeGeometry(shape, { depth: 20, bevelEnabled: false });
-        geo.rotateX(-Math.PI / 2);
-        return geo;
+
+        const walls = new THREE.ExtrudeGeometry(shape, { depth: 18.8, bevelEnabled: false });
+        walls.rotateX(-Math.PI / 2);
+        walls.translate(0, 1.2, 0);
+        parts.push(walls);
+
+        return mergeGeos(parts);
     }
 
-function loadBuiltinModel(type, silent = false) {
+    function loadBuiltinModel(type, silent = false) {
         const prof = (PROFILES[state.material] && PROFILES[state.material][state.mode]) || { nozzleTemp: 210 };
         const cap = (state.expert && state.expert.hotendType === 'ceramic') ? 300 : 260;
         const tBase = Math.round(prof.nozzleTemp / 5) * 5;
@@ -1038,7 +1254,7 @@ function loadBuiltinModel(type, silent = false) {
             resonance_tower:  { make: createResonanceGeo,       name: 'Resonance_Tower.stl' },
             gear:             { make: createGearGeo,            name: 'Tolerance_Involute_Gear.stl' },
             hinge:            { make: createHingeGeo,           name: 'Clearance_PrintInPlace_Hinge.stl' },
-            bolt:             { make: createBoltGeo,            name: 'Bolt_M8.stl' }
+            bolt:             { make: createBoltGeo,            name: 'Bolt_Nut_M10_Tolerance.stl' }
         };
         const entry = catalog[type];
         if (!entry) { showToast(`Неизвестная фигура: ${type}`); return; }
@@ -1050,7 +1266,7 @@ function loadBuiltinModel(type, silent = false) {
             plan = { h: 0, steps: towerTemps.map((t, i) => ({ z0: i === 0 ? 0 : 3.2 + i * 10, temp: t })) };
             planNote = `${towerTemps[0]} → ${towerTemps[4]}°C снизу вверх`;
         } else if (type === 'retraction_tower') {
-            plan = { h: 0, steps: [{ z0: 0, retract: retractVals[0] }, { z0: 17, retract: retractVals[1] }, { z0: 27, retract: retractVals[2] }] };
+            plan = { h: 0, steps: [{ z0: 0, retract: retractVals[0] }, { z0: 13.0, retract: retractVals[1] }, { z0: 23.0, retract: retractVals[2] }] };
             planNote = `ретракт ${retractVals.join(' / ')} мм снизу вверх`;
         }
 
