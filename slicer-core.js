@@ -438,7 +438,7 @@ function isTravelCrossingAir(x1, z1, x2, z2, safePolys, scale = 1000) {
 
 function optimizePath(segs, startX, startY) {
     if (!segs || segs.length < 2) return segs;
-    if (segs.length > 2500) return segs;
+    if (segs.length > 600) return segs; // Для резных моделей (салфетницы) исключаем зависание на связывании
 
     const cx = PRINTER_SPECS.bedX / 2;
     const cy = PRINTER_SPECS.bedY / 2;
@@ -1263,7 +1263,7 @@ if (earData.segs.length > 0 && isFinite(earData.minX)) {
                 }
             }
 
-            // ==== ДЕТЕКТОР ДНА И КРЫШЕК (Clipper, с кэшем соседних слоёв) ====
+// ==== ДЕТЕКТОР ДНА И КРЫШЕК (Clipper, с кэшем соседних слоёв) ====
             const pInfill = ringsToClipperClean(infillRings, SCALE);
             let solidSkinPaths = [];
 
@@ -1273,48 +1273,27 @@ if (earData.segs.length > 0 && isFinite(earData.minX)) {
                 } else {
                     let neededSolidUnion = [];
 
-                    // 1. Что перестаёт быть внутренним заполнением на слоях выше (дно выемок, полки под стенками)
-                    for (let step = 1; step <= topCheckCount; step++) {
-                        if (l + step >= numLayers) {
-                            neededSolidUnion = clipperOp(ClipperLib.ClipType.ctUnion, neededSolidUnion, pInfill);
-                            break;
-                        }
-                        const exposedTop = clipperOp(ClipperLib.ClipType.ctDifference, pInfill, getInfillPolysAt(l + step));
-                        if (exposedTop.length > 0) {
-                            neededSolidUnion = clipperOp(ClipperLib.ClipType.ctUnion, neededSolidUnion, exposedTop);
-                        }
+                    // Проверяем только критичные граничные слои (1 снизу и 1 сверху вместо тяжелого перебора)
+                    if (l + 1 < numLayers) {
+                        const exposedTop = clipperOp(ClipperLib.ClipType.ctDifference, pInfill, getInfillPolysAt(l + 1));
+                        if (exposedTop.length > 0) neededSolidUnion = clipperOp(ClipperLib.ClipType.ctUnion, neededSolidUnion, exposedTop);
+                    } else {
+                        neededSolidUnion = pInfill;
                     }
 
-                    // 2. Что висит над стенками или воздухом на слоях ниже (потолки, мосты, скосы)
-                    for (let step = 1; step <= bottomCheckCount; step++) {
-                        if (l - step < 0) {
-                            neededSolidUnion = clipperOp(ClipperLib.ClipType.ctUnion, neededSolidUnion, pInfill);
-                            break;
-                        }
-                        const exposedBottom = clipperOp(ClipperLib.ClipType.ctDifference, pInfill, getInfillPolysAt(l - step));
-                        if (exposedBottom.length > 0) {
-                            neededSolidUnion = clipperOp(ClipperLib.ClipType.ctUnion, neededSolidUnion, exposedBottom);
-                        }
+                    if (l > 0) {
+                        const exposedBottom = clipperOp(ClipperLib.ClipType.ctDifference, pInfill, getInfillPolysAt(l - 1));
+                        if (exposedBottom.length > 0) neededSolidUnion = clipperOp(ClipperLib.ClipType.ctUnion, neededSolidUnion, exposedBottom);
+                    } else {
+                        neededSolidUnion = pInfill;
                     }
 
-                    // 3. Фильтр микрошума (-0.12 мм) и расширение (+1.4 мм) для сцепления со стенками
                     if (neededSolidUnion.length > 0) {
-                        const coClean = new ClipperLib.ClipperOffset(2.4, 180);
-                        coClean.AddPaths(neededSolidUnion, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon);
-                        const eroded = new ClipperLib.Paths();
-                        coClean.Execute(eroded, -0.12 * SCALE);
-
-                        const srcForExpand = eroded.length > 0 ? eroded : neededSolidUnion;
-                        const coExpand = new ClipperLib.ClipperOffset(2.4, 180);
-                        coExpand.AddPaths(srcForExpand, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon);
-                        const expanded = new ClipperLib.Paths();
-                        coExpand.Execute(expanded, 1.4 * SCALE);
-
-                        solidSkinPaths = clipperOp(ClipperLib.ClipType.ctIntersection, expanded, pInfill);
+                        solidSkinPaths = clipperOp(ClipperLib.ClipType.ctIntersection, neededSolidUnion, pInfill);
                     }
                 }
             }
-            infillPolyCache.delete(l - bottomCheckCount - 1);
+            infillPolyCache.delete(l - 2);
 			
             // ==== ГЕНЕРАЦИЯ ЗАПОЛНЕНИЯ И СПЛОШНОГО ДНА ====
             if (!exp.vaseMode && allOuterSegsForInfill.length > 0 && isFinite(minX)) {
@@ -1445,15 +1424,18 @@ async function buildGcodePreview(layers) {
     const colSparse = [0.957, 0.247, 0.369];
     const colExtra = [0.063, 0.725, 0.506];
 
-    // Шестигранная трубка без торцов: 36 вершин на сегмент вместо 144 — критично для памяти телефона
-    const numSides = 6;
-    const vertsPerSeg = numSides * 6;
+    // Защита памяти телефона: если слоёв много (>140), рендерим легковесные линии (2 вершины на сегмент вместо 36), предотвращая вылет браузера
+    const useFastLines = layers.length > 140;
+    const numSides = useFastLines ? 0 : 4; // 4 грани для средних моделей, линии для больших
+    const vertsPerSeg = useFastLines ? 2 : numSides * 6;
     const cosTable = [];
     const sinTable = [];
-    for (let i = 0; i < numSides; i++) {
-        const a = (i / numSides) * Math.PI * 2;
-        cosTable.push(Math.cos(a));
-        sinTable.push(Math.sin(a));
+    if (!useFastLines) {
+        for (let i = 0; i < numSides; i++) {
+            const a = (i / numSides) * Math.PI * 2;
+            cosTable.push(Math.cos(a));
+            sinTable.push(Math.sin(a));
+        }
     }
 
     for (let lIdx = 0; lIdx < layers.length; lIdx++) {
@@ -1484,7 +1466,12 @@ async function buildGcodePreview(layers) {
                 ptr += 3;
             };
 
-            for (const s of segs) {
+for (const s of segs) {
+                if (useFastLines) {
+                    pushVert(s.p1.x, yCenter, s.p1.z);
+                    pushVert(s.p2.x, yCenter, s.p2.z);
+                    continue;
+                }
                 const dx = s.p2.x - s.p1.x, dz = s.p2.z - s.p1.z;
                 const len = Math.hypot(dx, dz);
                 if (len < 1e-4) continue;
@@ -1509,10 +1496,15 @@ async function buildGcodePreview(layers) {
                 const geo = new THREE.BufferGeometry();
                 geo.setAttribute('position', new THREE.BufferAttribute(ptr === pts.length ? pts : pts.slice(0, ptr), 3));
                 geo.setAttribute('color', new THREE.BufferAttribute(ptr === cols.length ? cols : cols.slice(0, ptr), 3));
-                geo.computeVertexNormals();
-
-                const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-                const m = new THREE.Mesh(geo, mat);
+                let m;
+                if (useFastLines) {
+                    const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85 });
+                    m = new THREE.LineSegments(geo, mat);
+                } else {
+                    geo.computeVertexNormals();
+                    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+                    m = new THREE.Mesh(geo, mat);
+                }
                 m.userData.featureType = batch.fType;
                 if (state.featureFilters && state.featureFilters[batch.fType] !== undefined) {
                     m.visible = state.featureFilters[batch.fType];
